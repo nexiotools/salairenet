@@ -1,15 +1,15 @@
 import { useState, useEffect, Fragment } from "react";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const PASS = 47100;
-const CAP_PER_HALF_PART = 1791;
+const PASS = 48060; // 2026: €4,005/month × 12
+const CAP_PER_HALF_PART = 1807; // 2026 plafonnement QF
 
 const IR_BRACKETS = [
-  { min: 0,      max: 11497,    rate: 0.00 },
-  { min: 11497,  max: 29315,    rate: 0.11 },
-  { min: 29315,  max: 83823,    rate: 0.30 },
-  { min: 83823,  max: 180294,   rate: 0.41 },
-  { min: 180294, max: Infinity, rate: 0.45 },
+  { min: 0,      max: 11600,    rate: 0.00 },
+  { min: 11600,  max: 29579,    rate: 0.11 },
+  { min: 29579,  max: 84577,    rate: 0.30 },
+  { min: 84577,  max: 181917,   rate: 0.41 },
+  { min: 181917, max: Infinity, rate: 0.45 },
 ];
 
 // Auto-entrepreneur rates 2025
@@ -106,17 +106,17 @@ const EXPAT_COUNTRIES = {
 // parts: number of fiscal parts
 // extra_half_parts: half-parts above the base (1 for single, 2 for couple)
 //   used for plafonnement cap calculation
-// décote thresholds: single €1,929 → coeff 0.4525 → base €873
-//                    couple €3,191 → coeff 0.4525 → base €1,444
+// décote thresholds 2026: single €1,982 → coeff 0.4525 → base €897
+//                         couple €3,277 → coeff 0.4525 → base €1,483
 const QF_SITUATIONS = [
-  { key: "single",       parts: 1,    extra: 0,   decote_threshold: 1929,  decote_base: 873,  label: { fr: "Célibataire, divorcé(e), veuf/veuve", en: "Single / divorced / widowed" } },
-  { key: "single_1",     parts: 1.5,  extra: 1,   decote_threshold: 1929,  decote_base: 873,  label: { fr: "Parent isolé, 1 enfant à charge", en: "Single parent, 1 dependent child" } },
-  { key: "single_2",     parts: 2,    extra: 2,   decote_threshold: 1929,  decote_base: 873,  label: { fr: "Parent isolé, 2 enfants à charge", en: "Single parent, 2 dependent children" } },
-  { key: "couple",       parts: 2,    extra: 0,   decote_threshold: 3191,  decote_base: 1444, label: { fr: "Marié(e) / Pacsé(e), sans enfant", en: "Married / civil partnership, no children" } },
-  { key: "couple_1",     parts: 2.5,  extra: 1,   decote_threshold: 3191,  decote_base: 1444, label: { fr: "Marié(e) / Pacsé(e), 1 enfant", en: "Married / civil partnership, 1 child" } },
-  { key: "couple_2",     parts: 3,    extra: 2,   decote_threshold: 3191,  decote_base: 1444, label: { fr: "Marié(e) / Pacsé(e), 2 enfants", en: "Married / civil partnership, 2 children" } },
-  { key: "couple_3",     parts: 4,    extra: 4,   decote_threshold: 3191,  decote_base: 1444, label: { fr: "Marié(e) / Pacsé(e), 3 enfants", en: "Married / civil partnership, 3 children" } },
-  { key: "couple_4",     parts: 5,    extra: 6,   decote_threshold: 3191,  decote_base: 1444, label: { fr: "Marié(e) / Pacsé(e), 4 enfants ou plus", en: "Married / civil partnership, 4+ children" } },
+  { key: "single",   parts: 1,   extra: 0, decote_threshold: 1982, decote_base: 897,  label: { fr: "Célibataire, divorcé(e), veuf/veuve", en: "Single / divorced / widowed" } },
+  { key: "single_1", parts: 1.5, extra: 1, decote_threshold: 1982, decote_base: 897,  label: { fr: "Parent isolé, 1 enfant à charge", en: "Single parent, 1 dependent child" } },
+  { key: "single_2", parts: 2,   extra: 2, decote_threshold: 1982, decote_base: 897,  label: { fr: "Parent isolé, 2 enfants à charge", en: "Single parent, 2 dependent children" } },
+  { key: "couple",   parts: 2,   extra: 0, decote_threshold: 3277, decote_base: 1483, label: { fr: "Marié(e) / Pacsé(e), sans enfant", en: "Married / civil partnership, no children" } },
+  { key: "couple_1", parts: 2.5, extra: 1, decote_threshold: 3277, decote_base: 1483, label: { fr: "Marié(e) / Pacsé(e), 1 enfant", en: "Married / civil partnership, 1 child" } },
+  { key: "couple_2", parts: 3,   extra: 2, decote_threshold: 3277, decote_base: 1483, label: { fr: "Marié(e) / Pacsé(e), 2 enfants", en: "Married / civil partnership, 2 children" } },
+  { key: "couple_3", parts: 4,   extra: 4, decote_threshold: 3277, decote_base: 1483, label: { fr: "Marié(e) / Pacsé(e), 3 enfants", en: "Married / civil partnership, 3 children" } },
+  { key: "couple_4", parts: 5,   extra: 6, decote_threshold: 3277, decote_base: 1483, label: { fr: "Marié(e) / Pacsé(e), 4 enfants ou plus", en: "Married / civil partnership, 4+ children" } },
 ];
 
 // ─── IR CALCULATION WITH QUOTIENT FAMILIAL ───────────────────────────────────
@@ -179,7 +179,7 @@ function calcSalarie(brut, period, situation) {
   const net_avant_ir = brut_annual - total_cotisations;
 
   // Taxable income
-  const abattement_frais = Math.min(Math.max(net_avant_ir * 0.10, 504), 14426);
+  const abattement_frais = Math.min(Math.max(net_avant_ir * 0.10, 509), 14555);
   const non_deductible_csg = assiette_csg * 0.024;
   const revenu_imposable = Math.max(0, net_avant_ir - abattement_frais - csg_deductible + non_deductible_csg);
 
