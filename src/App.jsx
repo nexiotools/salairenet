@@ -72,9 +72,18 @@ const EXPAT_COUNTRIES = {
     label: { fr: "Tchad", en: "Chad" },
     calcNet: (grossEUR, detachement = false) => {
       if (detachement) {
-        const social = grossEUR * 12 * 0.23;
-        const net_avant_ir = grossEUR * 12 - social;
-        return net_avant_ir / 12;
+        const B = grossEUR * 12;
+        const PASS = 48060;
+        // On détachement: employee pays retraite base + AGIRC-ARRCO + chômage
+        // + CSG 5.5% (taux spécial salariés domiciliés hors UE sans accord bilatéral)
+        const ret_plaf = Math.min(B, PASS) * 0.069;
+        const ret_dep = B * 0.004;
+        const agirc_t1 = Math.min(B, PASS) * 0.0315;
+        const agirc_t2 = Math.max(0, Math.min(B, PASS * 8) - PASS) * 0.0864;
+        const chomage = B * 0.0075;
+        const csg_etranger = B * 0.055;
+        const social = ret_plaf + ret_dep + agirc_t1 + agirc_t2 + chomage + csg_etranger;
+        return (B - social) / 12;
       }
       const grossXAF = grossEUR * 12 * 655.957;
       const cnpsBase = Math.min(grossXAF, 6000000);
@@ -93,7 +102,7 @@ const EXPAT_COUNTRIES = {
       return (netXAF / 655.957) / 12;
     },
     taxNote: { fr: "ITS progressif 0–40% + CNPS salarié 3,5% (plaf. 500 000 XAF/mois). Taux fixe : 1 € = 655,957 XAF", en: "Progressive ITS 0–40% + CNPS employee 3.5% (cap 500,000 XAF/month). Fixed rate: 1 € = 655.957 XAF" },
-    detachementNote: { fr: "En détachement : cotisations françaises maintenues (~23%), ITS local non appliqué. Net estimé avant IR (exonéré si +183 jours hors France).", en: "On détachement: French social contributions maintained (~23%), local ITS not applied. Net estimated before IR (exempt if +183 days outside France)." },
+    detachementNote: { fr: "En détachement : retraite base + AGIRC-ARRCO + chômage + CSG 5,5% (taux étranger). ITS local non appliqué. IR exonéré si +183 jours hors France.", en: "On détachement: French pension + AGIRC-ARRCO + unemployment + CSG 5.5% (non-resident rate). Local ITS not applied. Income tax exempt if +183 days outside France." },
     costHints: {
       housing:   { fr: "600–1 500 €/mois (souvent logement de fonction fourni par l'employeur)", en: "600–1,500 €/month (company housing often provided)" },
       health:    { fr: "150–400 €/mois (assurance rapatriement indispensable)", en: "150–400 €/month (repatriation insurance essential)" },
@@ -290,6 +299,9 @@ const T = {
     expatNoTax: "Aucun impôt sur le revenu ni cotisations salariales",
     expatCostsNote: "Ajouter le coût de la vie (optionnel)",
     expatDisclaimer: "Estimations basées sur des données 2026. Les coûts réels varient selon le logement, le style de vie et les avantages négociés avec l'employeur. Source : Numbeo, Expatica, données terrain 2026.",
+    empChargesLabel: "Charges patronales estimées",
+    empTotalCostLabel: "Coût total employeur",
+    empTotalCostNote: "Salaire brut + charges patronales + package",
     expatChildrenLabel: "Nombre d'enfants à charge",
     // Package complet
     packageTitle: "Package complet (optionnel)",
@@ -297,8 +309,13 @@ const T = {
     pkg13month: "13ème mois",
     pkgHousing: "Indemnité logement",
     pkgPerDiem: "Per diem / indemnité de vie",
-    pkgFlights: "Vols domicile/poste (valeur annuelle)",
+    pkgFlights: "Vols domicile/poste (annuel)",
     pkgHardship: "Prime de poste / hardship",
+    empParamsTitle: "Charges patronales (optionnel)",
+    atmpLabel: "Taux AT/MP",
+    atmpHint: "Défaut 2% — varie selon secteur. Visible sur votre notification URSSAF.",
+    muelleLabel: "Mutuelle patronale",
+    muelleHint: "Part employeur de la complémentaire santé (€/mois)",
     pkgTotal: "Total package mensuel",
     // Pension warning
     pensionWarning: "⚠ Droits retraite : vous n'accumulez pas de points retraite en France pendant cette période, sauf si votre employeur maintient le régime français. Cela peut représenter une perte de 400–800 €/mois à la retraite.",
@@ -368,13 +385,21 @@ const T = {
     expatCostsNote: "Add cost of living (optional)",
     expatDisclaimer: "Estimates based on 2026 data. Actual costs vary by housing choice, lifestyle, and employer package. Sources: Numbeo, Expatica, field data 2026.",
     expatChildrenLabel: "Number of dependent children",
+    empChargesLabel: "Estimated employer charges",
+    empTotalCostLabel: "Total employer cost",
+    empTotalCostNote: "Gross salary + employer charges + package",
     // Package complet
     packageTitle: "Full package (optional)",
     packageHint: "Add non-salary items for a more accurate calculation.",
+    empParamsTitle: "Employer parameters (optional)",
+    atmpLabel: "AT/MP rate",
+    atmpHint: "Default 2% — varies by sector. Found on your URSSAF notification.",
+    muelleLabel: "Employer mutuelle",
+    muelleHint: "Employer health insurance contribution (€/month)",
     pkg13month: "13th month bonus",
     pkgHousing: "Housing allowance",
     pkgPerDiem: "Per diem / living allowance",
-    pkgFlights: "Home flights (annual value)",
+    pkgFlights: "Home flights (annual)",
     pkgHardship: "Hardship / posting allowance",
     pkgTotal: "Total monthly package",
     // Pension warning
@@ -417,6 +442,7 @@ export default function App() {
   const [situationKey, setSituationKey] = useState("single");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [touched, setTouched] = useState(false);
 
   const t = T[lang];
   const situation = QF_SITUATIONS.find(s => s.key === situationKey);
@@ -447,6 +473,7 @@ export default function App() {
   };
 
   const handleCalculate = () => {
+    setTouched(true);
     const val = parseFloat(String(inputValue).replace(/[^\d.,]/g, "").replace(",", "."));
     if (!val || val <= 0) { setError(t.errorInvalid); return; }
     if (val > 2000000) { setError(t.errorTooHigh); return; }
@@ -617,10 +644,11 @@ export default function App() {
                   className="input-field"
                   type="number"
                   value={inputValue}
-                  onChange={e => setInputValue(e.target.value)}
+                  onChange={e => { setInputValue(e.target.value); setTouched(false); }}
                   onKeyDown={e => e.key === "Enter" && handleCalculate()}
                   placeholder="3 500"
                   min="0"
+                  style={touched && (!inputValue || parseFloat(inputValue) <= 0) ? { borderColor: "#ff4f4f", boxShadow: "0 0 0 2px rgba(255,79,79,0.15)" } : {}}
                 />
                 <div className="period-toggle">
                   <button className={`period-btn${period === "month" ? " active" : ""}`} onClick={() => setPeriod("month")}>{t.monthly}</button>
@@ -745,16 +773,20 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
   const [showRefine, setShowRefine] = useState(false);
   const [costs, setCosts] = useState({ housing: 0, health: 0, school: 0, transport: 0, food: 0 });
   const [pkg, setPkg] = useState({ month13: 0, housing: 0, perDiem: 0, flights: 0, hardship: 0 });
+  const [atmpRate, setAtmpRate] = useState(2.0);
+  const [atmpEdited, setAtmpEdited] = useState(false);
+  const [mutuelle, setMutuelle] = useState(0);
   const [detachement, setDetachement] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [touched, setTouched] = useState(false);
 
   const country = EXPAT_COUNTRIES[countryKey];
   const totalCosts = Object.values(costs).reduce((a, b) => a + b, 0);
   // Package total as monthly equivalent
-  const pkgMonthly = pkg.month13 + pkg.housing + pkg.perDiem + pkg.flights + pkg.hardship;
+  const pkgMonthly = pkg.month13 + pkg.housing + pkg.perDiem + (pkg.flights / 12) + pkg.hardship;
 
-  const calcResult = (fg, ck, eg, det) => {
+  const calcResult = (fg, ck, eg, det, atmp, mut) => {
     const c = EXPAT_COUNTRIES[ck];
     const frData = calcSalarie(fg, "month", situation);
     const frNet = frData.net_monthly;
@@ -780,22 +812,39 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
       // Round to avoid floating point noise making disposable appear < frNet
       if (Math.abs(abroadDisposable - frNet) < 0.01) abroadDisposable = frNet;
     }
-    return { frData, frNet, abroadGross, abroadNet, abroadDisposable, totalCosts, pkgMonthly, eg: eg || null, detachement: det };
+    // Employer cost calculation — uses user-adjustable AT/MP rate and mutuelle
+    const PASS = 48060;
+    const abroadBase = abroadGross;
+    const empMaladie = abroadBase * 12 * 0.07;
+    const empFamille = abroadBase * 12 * 0.0525;
+    const empRetPlaf = Math.min(abroadBase * 12, PASS) * 0.0855;
+    const empRetDep = abroadBase * 12 * 0.019;
+    const empAgircT1 = Math.min(abroadBase * 12, PASS) * 0.0472;
+    const empAgircT2 = Math.max(0, Math.min(abroadBase * 12, PASS * 8) - PASS) * 0.1295;
+    const empChomage = abroadBase * 12 * 0.0405;
+    const empAt = abroadBase * 12 * ((atmp || 2.0) / 100);
+    const empMutuelleYear = (mut || 0) * 12;
+    const empChargesYear = empMaladie + empFamille + empRetPlaf + empRetDep + empAgircT1 + empAgircT2 + empChomage + empAt + empMutuelleYear;
+    const empChargesMonth = empChargesYear / 12;
+    const totalEmployerCostMonth = abroadGross + empChargesMonth + pkgMonthly;
+
+    return { frData, frNet, abroadGross, abroadNet, abroadDisposable, totalCosts, pkgMonthly, eg: eg || null, detachement: det, empChargesMonth: Math.round(empChargesMonth), totalEmployerCostMonth: Math.round(totalEmployerCostMonth) };
   };
 
   const handleCompare = () => {
+    setTouched(true);
     const fg = parseFloat(String(frenchGross).replace(/[^\d.,]/g, "").replace(",", "."));
     if (!fg || fg <= 0) { setError(t.errorInvalid); return; }
     const eg = parseFloat(String(expatGross).replace(/[^\d.,]/g, "").replace(",", "."));
     setError("");
-    setResult(calcResult(fg, countryKey, eg, detachement));
+    setResult(calcResult(fg, countryKey, eg, detachement, atmpRate, mutuelle));
   };
 
   const switchCountry = (key) => {
     setCountryKey(key);
     if (!result) return;
     const fg = parseFloat(String(frenchGross).replace(/[^\d.,]/g, "").replace(",", "."));
-    setResult(calcResult(fg, key, result.eg, key === "td" ? detachement : false));
+    setResult(calcResult(fg, key, result.eg, key === "td" ? detachement : false, atmpRate, mutuelle));
   };
 
   const reset = () => { setResult(null); setFrenchGross(""); setExpatGross(""); setError(""); };
@@ -821,7 +870,7 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
     </div>
   );
 
-  const NumberRow = ({ label, value, onChange, hint }) => {
+  const NumberRow = ({ label, value, onChange, hint, unit = "/mois" }) => {
     const [localVal, setLocalVal] = useState(value === 0 ? "" : String(value));
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -837,10 +886,11 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
             value={localVal}
             onChange={e => setLocalVal(e.target.value)}
             onBlur={() => { const n = parseFloat(String(localVal).replace(",", ".")) || 0; onChange(n); setLocalVal(n === 0 ? "" : String(n)); }}
+            onKeyDown={e => { if (e.key === "Enter") { const n = parseFloat(String(localVal).replace(",", ".")) || 0; onChange(n); setLocalVal(n === 0 ? "" : String(n)); e.target.blur(); } }}
             placeholder="0"
             style={{ width: 80, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, color: "#f0ece8", fontFamily: "'DM Sans', sans-serif", fontSize: 13, padding: "6px 10px", outline: "none", textAlign: "right" }}
           />
-          <span style={{ fontSize: 11, color: "rgba(240,236,232,0.3)" }}>/mois</span>
+          <span style={{ fontSize: 11, color: "rgba(240,236,232,0.3)", width: 32, display: "inline-block" }}>{unit}</span>
         </div>
       </div>
     );
@@ -858,9 +908,11 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
           <div className="input-group">
             <div className="input-label">{t.inputLabel}</div>
             <input className="input-field" type="number" value={frenchGross}
-              onChange={e => setFrenchGross(e.target.value)}
+              onChange={e => { setFrenchGross(e.target.value); setTouched(false); }}
               onKeyDown={e => e.key === "Enter" && handleCompare()}
-              placeholder="5 000" />
+              placeholder="5 000"
+              style={touched && (!frenchGross || parseFloat(frenchGross) <= 0) ? { borderColor: "#ff4f4f", boxShadow: "0 0 0 2px rgba(255,79,79,0.15)" } : {}}
+            />
           </div>
 
           <CollapseSection
@@ -932,8 +984,34 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
             <NumberRow label={t.pkg13month} value={pkg.month13} onChange={v => setPkg(p => ({ ...p, month13: v }))} />
             <NumberRow label={t.pkgHousing} value={pkg.housing} onChange={v => setPkg(p => ({ ...p, housing: v }))} />
             <NumberRow label={t.pkgPerDiem} value={pkg.perDiem} onChange={v => setPkg(p => ({ ...p, perDiem: v }))} />
-            <NumberRow label={t.pkgFlights} value={pkg.flights} onChange={v => setPkg(p => ({ ...p, flights: v }))} />
+            <NumberRow label={t.pkgFlights} value={pkg.flights} onChange={v => setPkg(p => ({ ...p, flights: v }))} unit={t.perYear} />
             <NumberRow label={t.pkgHardship} value={pkg.hardship} onChange={v => setPkg(p => ({ ...p, hardship: v }))} />
+
+            {/* Employer parameters */}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 10, paddingTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(240,236,232,0.3)", marginBottom: 10 }}>
+                {t.empParamsTitle}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 12, color: "rgba(240,236,232,0.45)" }}>{t.atmpLabel}</span>
+                  <div style={{ fontSize: 10, color: "rgba(240,236,232,0.25)", marginTop: 2 }}>{t.atmpHint}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="text" inputMode="decimal"
+                    value={atmpRate === 2.0 && !atmpEdited ? "" : String(atmpRate)}
+                    onChange={e => { setAtmpEdited(true); setAtmpRate(parseFloat(e.target.value.replace(",", ".")) || 2.0); }}
+                    onBlur={e => { const v = parseFloat(e.target.value.replace(",", ".")) || 2.0; setAtmpRate(v); }}
+                    onKeyDown={e => { if (e.key === "Enter") { const v = parseFloat(e.target.value.replace(",", ".")) || 2.0; setAtmpRate(v); e.target.blur(); } }}
+                    placeholder="2.0"
+                    style={{ width: 80, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, color: "#f0ece8", fontFamily: "'DM Sans', sans-serif", fontSize: 13, padding: "6px 10px", outline: "none", textAlign: "right" }}
+                  />
+                  <span style={{ fontSize: 11, color: "rgba(240,236,232,0.3)", width: 32, display: "inline-block" }}>%</span>
+                </div>
+              </div>
+              <NumberRow label={t.muelleLabel} value={mutuelle} onChange={v => setMutuelle(v)} hint={t.muelleHint} />
+            </div>
             {pkgMonthly > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, borderTop: "1px solid rgba(79,142,255,0.15)", marginTop: 4 }}>
                 <span style={{ fontSize: 12, color: "rgba(79,142,255,0.7)" }}>{t.pkgTotal}</span>
@@ -1105,7 +1183,7 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
               {pkg.month13 > 0 && <div className="stat-row"><span className="stat-label">{t.pkg13month}</span><span className="stat-val">+{fmt(pkg.month13)}</span></div>}
               {pkg.housing > 0 && <div className="stat-row"><span className="stat-label">{t.pkgHousing}</span><span className="stat-val">+{fmt(pkg.housing)}</span></div>}
               {pkg.perDiem > 0 && <div className="stat-row"><span className="stat-label">{t.pkgPerDiem}</span><span className="stat-val">+{fmt(pkg.perDiem)}</span></div>}
-              {pkg.flights > 0 && <div className="stat-row"><span className="stat-label">{t.pkgFlights}</span><span className="stat-val">+{fmt(pkg.flights)}</span></div>}
+              {pkg.flights > 0 && <div className="stat-row"><span className="stat-label">{t.pkgFlights}</span><span className="stat-val">+{fmt(pkg.flights / 12)}</span></div>}
               {pkg.hardship > 0 && <div className="stat-row"><span className="stat-label">{t.pkgHardship}</span><span className="stat-val">+{fmt(pkg.hardship)}</span></div>}
               <div className="stat-row">
                 <span className="stat-label" style={{ fontWeight: 600, color: "rgba(79,142,255,0.7)" }}>{t.pkgTotal}</span>
@@ -1127,6 +1205,36 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
                 <span className="stat-val" style={{ color: "#4f8eff" }}>{fmt(result.totalCosts)}</span>
               </div>
             </>)}
+
+            {/* Employer cost section */}
+            {result.empChargesMonth > 0 && (
+              <div style={{ marginTop: 16, padding: "14px 16px", background: "rgba(79,142,255,0.06)", border: "1px solid rgba(79,142,255,0.15)", borderRadius: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(79,142,255,0.6)", marginBottom: 10 }}>
+                  {t.empTotalCostLabel}
+                </div>
+                <div className="stat-row">
+                  <span className="stat-label">{lang === "fr" ? "Salaire brut" : "Gross salary"}</span>
+                  <span className="stat-val">{fmt(result.abroadGross)}</span>
+                </div>
+                <div className="stat-row">
+                  <span className="stat-label">{t.empChargesLabel}</span>
+                  <span className="stat-val">{fmt(result.empChargesMonth)}</span>
+                </div>
+                {result.pkgMonthly > 0 && (
+                  <div className="stat-row">
+                    <span className="stat-label">{lang === "fr" ? "Package (net)" : "Package (net)"}</span>
+                    <span className="stat-val">{fmt(result.pkgMonthly)}</span>
+                  </div>
+                )}
+                <div className="stat-row" style={{ borderTop: "1px solid rgba(79,142,255,0.15)", paddingTop: 8, marginTop: 4 }}>
+                  <span className="stat-label" style={{ fontWeight: 700, color: "rgba(240,236,232,0.8)" }}>{t.empTotalCostLabel}</span>
+                  <span className="stat-val" style={{ color: "#4f8eff", fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 800 }}>{fmt(result.totalEmployerCostMonth)}<span style={{ fontSize: 11, opacity: 0.5, marginLeft: 4 }}>/mois</span></span>
+                </div>
+                <div style={{ fontSize: 10, color: "rgba(240,236,232,0.25)", marginTop: 6 }}>
+                  {t.empTotalCostNote} · AT/MP {(atmpRate || 2.0).toFixed(1)}%{mutuelle > 0 ? ` · mutuelle €${mutuelle}/mois` : ""}
+                </div>
+              </div>
+            )}
 
             <div className="disclaimer" style={{ marginTop: 16 }}>{t.expatDisclaimer}</div>
           </div>
