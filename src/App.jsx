@@ -244,7 +244,12 @@ const T = {
     modeSalarie: "Salarié",
     modeAE: "Auto-entrepreneur",
     inputLabel: "Salaire brut",
+    inputLabelNet: "Salaire net souhaité",
     inputLabelAE: "Chiffre d'affaires",
+    dirBrutoNetto: "Brut → Net",
+    dirNettoBruto: "Net → Brut",
+    requiredGross: "Salaire brut nécessaire",
+    requiredGrossNote: "Pour obtenir ce salaire net",
     monthly: "par mois",
     annual: "par an",
     calculate: "Calculer",
@@ -286,6 +291,10 @@ const T = {
     expatFamilyFamily1: "Famille (1 enfant)",
     expatFamilyFamily2: "Famille (2 enfants)",
     expatGrossAbroad: "Salaire brut à l'étranger (optionnel)",
+    expatNetAbroad: "Salaire net souhaité à l'étranger",
+    expatNetAbroadHint: "Le brut nécessaire pour obtenir ce net sera calculé automatiquement.",
+    expatDirBruto: "Brut → Net",
+    expatDirNetto: "Net → Brut",
     expatGrossAbroadHint: "Laissez vide pour calculer le brut équivalent",
     expatCompare: "Comparer",
     expatColFrance: "En France",
@@ -329,7 +338,12 @@ const T = {
     modeSalarie: "Employee",
     modeAE: "Self-employed",
     inputLabel: "Gross salary",
+    inputLabelNet: "Desired net salary",
     inputLabelAE: "Annual revenue",
+    dirBrutoNetto: "Gross → Net",
+    dirNettoBruto: "Net → Gross",
+    requiredGross: "Required gross salary",
+    requiredGrossNote: "To achieve this net salary",
     monthly: "per month",
     annual: "per year",
     calculate: "Calculate",
@@ -371,6 +385,10 @@ const T = {
     expatFamilyFamily1: "Family (1 child)",
     expatFamilyFamily2: "Family (2 children)",
     expatGrossAbroad: "Gross salary abroad (optional)",
+    expatNetAbroad: "Desired net salary abroad",
+    expatNetAbroadHint: "The required gross to achieve this net will be calculated automatically.",
+    expatDirBruto: "Gross → Net",
+    expatDirNetto: "Net → Gross",
     expatGrossAbroadHint: "Leave blank to calculate the equivalent gross needed",
     expatCompare: "Compare",
     expatColFrance: "In France",
@@ -436,7 +454,9 @@ export default function App() {
   const [lang, setLang] = useState("fr");
   const [topTab, setTopTab] = useState("france"); // france | expat
   const [mode, setMode] = useState("salarie");
+  const [direction, setDirection] = useState("bruto");
   const [inputValue, setInputValue] = useState("");
+  const [netInput, setNetInput] = useState("");
   const [period, setPeriod] = useState("month");
   const [activity, setActivity] = useState("services_bic");
   const [situationKey, setSituationKey] = useState("single");
@@ -472,8 +492,28 @@ export default function App() {
     try { localStorage.setItem("salairenet_lang", l); } catch {}
   };
 
+  const calcBrutoFromNet = (netMonthlyTarget, sit) => {
+    // Binary search for gross that produces the target net
+    let lo = netMonthlyTarget * 0.8;
+    let hi = netMonthlyTarget * 3;
+    for (let i = 0; i < 80; i++) {
+      const mid = (lo + hi) / 2;
+      const res = calcSalarie(mid, "month", sit);
+      if (res.net_monthly < netMonthlyTarget) lo = mid; else hi = mid;
+      if (Math.abs(hi - lo) < 0.5) break;
+    }
+    return calcSalarie((lo + hi) / 2, "month", sit);
+  };
+
   const handleCalculate = () => {
     setTouched(true);
+    if (direction === "netto" && mode === "salarie") {
+      const val = parseFloat(String(netInput).replace(/[^\d.,]/g, "").replace(",", "."));
+      if (!val || val <= 0) { setError(t.errorInvalid); return; }
+      setError("");
+      setResult({ ...calcBrutoFromNet(val, situation), isReverse: true, netTarget: val });
+      return;
+    }
     const val = parseFloat(String(inputValue).replace(/[^\d.,]/g, "").replace(",", "."));
     if (!val || val <= 0) { setError(t.errorInvalid); return; }
     if (val > 2000000) { setError(t.errorTooHigh); return; }
@@ -486,7 +526,7 @@ export default function App() {
     }
   };
 
-  const reset = () => { setResult(null); setInputValue(""); setError(""); };
+  const reset = () => { setResult(null); setInputValue(""); setNetInput(""); setError(""); setTouched(false); };
 
   return (
     <div style={{ minHeight: "100vh", background: "#0c0c10", fontFamily: "'DM Sans', sans-serif", color: "#f0ece8", position: "relative", overflow: "hidden" }}>
@@ -599,13 +639,25 @@ export default function App() {
           <div className="card" style={{ animationDelay: "0.1s" }}>
             {/* Mode toggle */}
             <div className="mode-toggle">
-              <button className={`mode-btn${mode === "salarie" ? " active" : ""}`} onClick={() => { setMode("salarie"); setError(""); }}>
+              <button className={`mode-btn${mode === "salarie" ? " active" : ""}`} onClick={() => { setMode("salarie"); setError(""); setResult(null); }}>
                 {t.modeSalarie}
               </button>
-              <button className={`mode-btn${mode === "ae" ? " active" : ""}`} onClick={() => { setMode("ae"); setError(""); }}>
+              <button className={`mode-btn${mode === "ae" ? " active" : ""}`} onClick={() => { setMode("ae"); setDirection("bruto"); setError(""); setResult(null); }}>
                 {t.modeAE}
               </button>
             </div>
+
+            {/* Direction toggle — salarié only */}
+            {mode === "salarie" && (
+              <div className="mode-toggle" style={{ marginTop: 8, background: "rgba(255,255,255,0.03)" }}>
+                <button className={`mode-btn${direction === "bruto" ? " active" : ""}`} onClick={() => { setDirection("bruto"); setError(""); setResult(null); }}>
+                  {t.dirBrutoNetto}
+                </button>
+                <button className={`mode-btn${direction === "netto" ? " active" : ""}`} onClick={() => { setDirection("netto"); setError(""); setResult(null); }}>
+                  {t.dirNettoBruto}
+                </button>
+              </div>
+            )}
 
             {/* Activity selector for AE */}
             {mode === "ae" && (
@@ -638,7 +690,26 @@ export default function App() {
 
             {/* Amount input */}
             <div className="input-group">
-              <div className="input-label">{mode === "salarie" ? t.inputLabel : t.inputLabelAE}</div>
+              <div className="input-label">
+                {mode === "ae" ? t.inputLabelAE : direction === "netto" ? t.inputLabelNet : t.inputLabel}
+              </div>
+              {direction === "netto" && mode === "salarie" ? (
+                <div className="input-row">
+                  <input
+                    className="input-field"
+                    type="number"
+                    value={netInput}
+                    onChange={e => { setNetInput(e.target.value); setTouched(false); }}
+                    onKeyDown={e => e.key === "Enter" && handleCalculate()}
+                    placeholder="3 000"
+                    min="0"
+                    style={touched && (!netInput || parseFloat(netInput) <= 0) ? { borderColor: "#ff4f4f", boxShadow: "0 0 0 2px rgba(255,79,79,0.15)" } : {}}
+                  />
+                  <div className="period-toggle">
+                    <button className="period-btn active">{t.monthly}</button>
+                  </div>
+                </div>
+              ) : (
               <div className="input-row">
                 <input
                   className="input-field"
@@ -655,6 +726,7 @@ export default function App() {
                   <button className={`period-btn${period === "year" ? " active" : ""}`} onClick={() => setPeriod("year")}>{t.annual}</button>
                 </div>
               </div>
+              )}
               {error && <div className="error">{error}</div>}
             </div>
 
@@ -706,6 +778,21 @@ function ResultCard({ result, t, onReset, lang, situation }) {
             {t.partsInfo(situation.parts)}
           </span>
         </div>
+
+        {/* Reverse mode: show required gross prominently */}
+        {result.isReverse && (
+          <div style={{ background: "rgba(79,142,255,0.08)", border: "1px solid rgba(79,142,255,0.2)", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(79,142,255,0.7)", marginBottom: 6 }}>
+              {t.requiredGross}
+            </div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(28px,5vw,40px)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em" }}>
+              {fmt(data.brut_monthly)}<span style={{ fontSize: "0.35em", color: "rgba(240,236,232,0.35)", marginLeft: 4 }}>{t.perMonth}</span>
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(79,142,255,0.5)", marginTop: 4 }}>
+              {fmt(data.brut_annual)}{t.perYear} · {t.requiredGrossNote}
+            </div>
+          </div>
+        )}
 
         {/* Net highlight */}
         <div className="net-highlight">
@@ -780,6 +867,7 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [touched, setTouched] = useState(false);
+  const [expatDirection, setExpatDirection] = useState("bruto");
 
   const country = EXPAT_COUNTRIES[countryKey];
   const totalCosts = Object.values(costs).reduce((a, b) => a + b, 0);
@@ -835,9 +923,25 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
     setTouched(true);
     const fg = parseFloat(String(frenchGross).replace(/[^\d.,]/g, "").replace(",", "."));
     if (!fg || fg <= 0) { setError(t.errorInvalid); return; }
-    const eg = parseFloat(String(expatGross).replace(/[^\d.,]/g, "").replace(",", "."));
+    const rawVal = parseFloat(String(expatGross).replace(/[^\d.,]/g, "").replace(",", "."));
     setError("");
-    setResult(calcResult(fg, countryKey, eg, detachement, atmpRate, mutuelle));
+
+    if (expatDirection === "netto" && rawVal > 0) {
+      // Binary search: find the gross that produces the desired net abroad
+      const c = EXPAT_COUNTRIES[countryKey];
+      const calcNetFn = (gross) => c.calcNet ? c.calcNet(gross, countryKey === "td" ? detachement : false) : gross;
+      const targetNet = rawVal - pkgMonthly; // net target excluding package
+      let lo = Math.max(100, targetNet * 0.5), hi = targetNet * 5, mid = targetNet;
+      for (let i = 0; i < 80; i++) {
+        mid = (lo + hi) / 2;
+        calcNetFn(mid) < targetNet ? lo = mid : hi = mid;
+        if (Math.abs(hi - lo) < 0.5) break;
+      }
+      setResult(calcResult(fg, countryKey, mid, detachement, atmpRate, mutuelle));
+    } else {
+      const eg = rawVal || 0;
+      setResult(calcResult(fg, countryKey, eg || null, detachement, atmpRate, mutuelle));
+    }
   };
 
   const switchCountry = (key) => {
@@ -978,6 +1082,16 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
             </div>
           )}
 
+          {/* Direction toggle — moved above package */}
+          <div style={{ display: "flex", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
+            <button onClick={() => { setExpatDirection("bruto"); setExpatGross(""); setError(""); }} style={{ flex: 1, padding: "10px 16px", background: expatDirection === "bruto" ? "#4f8eff" : "transparent", border: "none", color: expatDirection === "bruto" ? "#fff" : "rgba(240,236,232,0.45)", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 500, cursor: "pointer", transition: "all 0.18s" }}>
+              {t.expatDirBruto}
+            </button>
+            <button onClick={() => { setExpatDirection("netto"); setExpatGross(""); setError(""); }} style={{ flex: 1, padding: "10px 16px", background: expatDirection === "netto" ? "#4f8eff" : "transparent", border: "none", color: expatDirection === "netto" ? "#fff" : "rgba(240,236,232,0.45)", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 500, cursor: "pointer", transition: "all 0.18s" }}>
+              {t.expatDirNetto}
+            </button>
+          </div>
+
           {/* Package complet */}
           <CollapseSection title={`✦ ${t.packageTitle}`} open={showPackage} onToggle={() => setShowPackage(s => !s)} accent>
             <p style={{ fontSize: 11, color: "rgba(240,236,232,0.35)", marginBottom: 12, lineHeight: 1.5 }}>{t.packageHint}</p>
@@ -1015,7 +1129,7 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
             {pkgMonthly > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, borderTop: "1px solid rgba(79,142,255,0.15)", marginTop: 4 }}>
                 <span style={{ fontSize: 12, color: "rgba(79,142,255,0.7)" }}>{t.pkgTotal}</span>
-                <span style={{ fontSize: 13, fontFamily: "'Syne', sans-serif", fontWeight: 700, color: "#4f8eff" }}>+{fmt(pkgMonthly)}/mois</span>
+                <span style={{ fontSize: 13, fontFamily: "'Syne', sans-serif", fontWeight: 700, color: "#4f8eff" }}>+{fmt(pkgMonthly)}{t.perMonth}</span>
               </div>
             )}
           </CollapseSection>
@@ -1038,15 +1152,19 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
             {totalCosts > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                 <span style={{ fontSize: 12, color: "rgba(240,236,232,0.45)" }}>Total</span>
-                <span style={{ fontSize: 13, fontFamily: "'Syne', sans-serif", fontWeight: 700, color: "#f0ece8" }}>{fmt(totalCosts)}/mois</span>
+                <span style={{ fontSize: 13, fontFamily: "'Syne', sans-serif", fontWeight: 700, color: "#f0ece8" }}>{fmt(totalCosts)}{t.perMonth}</span>
               </div>
             )}
           </CollapseSection>
 
-          {/* Foreign gross (optional) */}
+          {/* Foreign salary input */}
           <div className="input-group">
-            <div className="input-label">{t.expatGrossAbroad}</div>
-            <p style={{ fontSize: 11, color: "rgba(240,236,232,0.3)", marginBottom: 8 }}>{t.expatGrossAbroadHint}</p>
+            <div className="input-label">
+              {expatDirection === "netto" ? t.expatNetAbroad : t.expatGrossAbroad}
+            </div>
+            <p style={{ fontSize: 11, color: "rgba(240,236,232,0.3)", marginBottom: 8 }}>
+              {expatDirection === "netto" ? t.expatNetAbroadHint : t.expatGrossAbroadHint}
+            </p>
             <input className="input-field" type="number" value={expatGross}
               onChange={e => setExpatGross(e.target.value)}
               placeholder="0" />
@@ -1088,7 +1206,7 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
                   {t.expatEquivLabel}
                 </div>
                 <div style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(28px,5vw,40px)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em" }}>
-                  {fmt(result.abroadGross)}<span style={{ fontSize: "0.35em", color: "rgba(240,236,232,0.35)", marginLeft: 4 }}>/mois</span>
+                  {fmt(result.abroadGross)}<span style={{ fontSize: "0.35em", color: "rgba(240,236,232,0.35)", marginLeft: 4 }}>{t.perMonth}</span>
                 </div>
                 {result.pkgMonthly > 0 && (
                   <div style={{ fontSize: 12, color: "rgba(79,142,255,0.5)", marginTop: 4 }}>
@@ -1115,20 +1233,20 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
                     }
                   </div>
                   <div style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(24px,4vw,36px)", fontWeight: 800, color: isEnough ? "#50c878" : "#ff7070", letterSpacing: "-0.02em" }}>
-                    {isEnough ? "+" : ""}{fmt(diff)}<span style={{ fontSize: "0.4em", color: isEnough ? "rgba(80,200,120,0.5)" : "rgba(255,140,140,0.5)", marginLeft: 4 }}>/mois</span>
+                    {isEnough ? "+" : ""}{fmt(diff)}<span style={{ fontSize: "0.4em", color: isEnough ? "rgba(80,200,120,0.5)" : "rgba(255,140,140,0.5)", marginLeft: 4 }}>{t.perMonth}</span>
                   </div>
                   {!isEnough && (
                     <div style={{ fontSize: 12, color: "rgba(255,140,140,0.6)", marginTop: 6 }}>
                       {lang === "fr"
-                        ? `Il vous manque ${fmt(Math.abs(diff))}/mois par rapport à votre net en France`
-                        : `You are ${fmt(Math.abs(diff))}/month short of your French take-home`}
+                        ? `Il vous manque ${fmt(Math.abs(diff))}${t.perMonth} par rapport à votre net en France`
+                        : `You are ${fmt(Math.abs(diff))}${t.perMonth} short of your French take-home`}
                     </div>
                   )}
                   {isEnough && diff > 0.5 && (
                     <div style={{ fontSize: 12, color: "rgba(80,200,120,0.6)", marginTop: 6 }}>
                       {lang === "fr"
-                        ? `Vous gagnez ${fmt(diff)}/mois de plus qu'en France`
-                        : `You earn ${fmt(diff)}/month more than in France`}
+                        ? `Vous gagnez ${fmt(diff)}${t.perMonth} de plus qu'en France`
+                        : `You earn ${fmt(diff)}${t.perMonth} more than in France`}
                     </div>
                   )}
                 </div>
@@ -1228,10 +1346,10 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
                 )}
                 <div className="stat-row" style={{ borderTop: "1px solid rgba(79,142,255,0.15)", paddingTop: 8, marginTop: 4 }}>
                   <span className="stat-label" style={{ fontWeight: 700, color: "rgba(240,236,232,0.8)" }}>{t.empTotalCostLabel}</span>
-                  <span className="stat-val" style={{ color: "#4f8eff", fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 800 }}>{fmt(result.totalEmployerCostMonth)}<span style={{ fontSize: 11, opacity: 0.5, marginLeft: 4 }}>/mois</span></span>
+                  <span className="stat-val" style={{ color: "#4f8eff", fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 800 }}>{fmt(result.totalEmployerCostMonth)}<span style={{ fontSize: 11, opacity: 0.5, marginLeft: 4 }}>{t.perMonth}</span></span>
                 </div>
                 <div style={{ fontSize: 10, color: "rgba(240,236,232,0.25)", marginTop: 6 }}>
-                  {t.empTotalCostNote} · AT/MP {(atmpRate || 2.0).toFixed(1)}%{mutuelle > 0 ? ` · mutuelle €${mutuelle}/mois` : ""}
+                  {t.empTotalCostNote} · AT/MP {(atmpRate || 2.0).toFixed(1)}%{mutuelle > 0 ? ` · mutuelle €${mutuelle}${t.perMonth}` : ""}
                 </div>
               </div>
             )}
