@@ -283,6 +283,9 @@ const T = {
     expatTitle: "Comparer avec l'étranger",
     expatSubtitle: "Entrez votre salaire brut français et le pays de destination. Comparez votre net disponible après coût de la vie.",
     expatStep1: "Votre situation en France",
+    expatFrGrossLabel: "Salaire brut en France",
+    expatFrNetLabel: "Salaire net en France",
+    expatFrNetHint: "Votre salaire net mensuel (ce que vous recevez sur votre compte)",
     expatStep2: "Pays de destination",
     expatStep3: "Résultat comparatif",
     expatCountryLabel: "Pays",
@@ -377,6 +380,9 @@ const T = {
     expatTitle: "Compare with abroad",
     expatSubtitle: "Enter your French gross salary and destination country. Compare your disposable income after cost of living.",
     expatStep1: "Your situation in France",
+    expatFrGrossLabel: "French gross salary",
+    expatFrNetLabel: "French net salary",
+    expatFrNetHint: "Your monthly take-home pay (what hits your bank account)",
     expatStep2: "Destination country",
     expatStep3: "Comparison result",
     expatCountryLabel: "Country",
@@ -511,7 +517,7 @@ export default function App() {
       const val = parseFloat(String(netInput).replace(/[^\d.,]/g, "").replace(",", "."));
       if (!val || val <= 0) { setError(t.errorInvalid); return; }
       setError("");
-      setResult({ ...calcBrutoFromNet(val, situation), isReverse: true, netTarget: val });
+      setResult({ type: "salarie", data: calcBrutoFromNet(val, situation), isReverse: true, netTarget: val });
       return;
     }
     const val = parseFloat(String(inputValue).replace(/[^\d.,]/g, "").replace(",", "."));
@@ -614,7 +620,7 @@ export default function App() {
           </div>
           <h1>{topTab === "expat"
             ? (lang === "fr" ? <>Comparer votre salaire <em>à l'étranger</em></> : <>Compare your salary <em>abroad</em></>)
-            : <>Salaire <em>brut → net</em></>
+            : <><em>Salaire</em>Net</>
           }</h1>
           <p className="subtitle">{topTab === "france" ? t.subtitle : t.expatSubtitle}</p>
         </div>
@@ -699,11 +705,11 @@ export default function App() {
                     className="input-field"
                     type="number"
                     value={netInput}
-                    onChange={e => { setNetInput(e.target.value); setTouched(false); }}
+                    onChange={e => { setNetInput(e.target.value); }}
                     onKeyDown={e => e.key === "Enter" && handleCalculate()}
                     placeholder="3 000"
                     min="0"
-                    style={touched && (!netInput || parseFloat(netInput) <= 0) ? { borderColor: "#ff4f4f", boxShadow: "0 0 0 2px rgba(255,79,79,0.15)" } : {}}
+                    
                   />
                   <div className="period-toggle">
                     <button className="period-btn active">{t.monthly}</button>
@@ -715,11 +721,11 @@ export default function App() {
                   className="input-field"
                   type="number"
                   value={inputValue}
-                  onChange={e => { setInputValue(e.target.value); setTouched(false); }}
+                  onChange={e => { setInputValue(e.target.value); }}
                   onKeyDown={e => e.key === "Enter" && handleCalculate()}
                   placeholder="3 500"
                   min="0"
-                  style={touched && (!inputValue || parseFloat(inputValue) <= 0) ? { borderColor: "#ff4f4f", boxShadow: "0 0 0 2px rgba(255,79,79,0.15)" } : {}}
+                  
                 />
                 <div className="period-toggle">
                   <button className={`period-btn${period === "month" ? " active" : ""}`} onClick={() => setPeriod("month")}>{t.monthly}</button>
@@ -774,9 +780,14 @@ function ResultCard({ result, t, onReset, lang, situation }) {
       <div className="card" style={{ animationDelay: "0s" }}>
         <div className="result-header">
           <span className="result-title">{t.resultTitle}</span>
-          <span style={{ fontSize: 11, color: "rgba(79,142,255,0.7)", background: "rgba(79,142,255,0.1)", border: "1px solid rgba(79,142,255,0.2)", borderRadius: 100, padding: "3px 10px" }}>
-            {t.partsInfo(situation.parts)}
-          </span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "rgba(79,142,255,0.7)", background: "rgba(79,142,255,0.1)", border: "1px solid rgba(79,142,255,0.2)", borderRadius: 100, padding: "3px 10px" }}>
+              {result.isReverse ? t.dirNettoBruto : t.dirBrutoNetto}
+            </span>
+            <span style={{ fontSize: 11, color: "rgba(79,142,255,0.7)", background: "rgba(79,142,255,0.1)", border: "1px solid rgba(79,142,255,0.2)", borderRadius: 100, padding: "3px 10px" }}>
+              {t.partsInfo(situation.parts)}
+            </span>
+          </div>
         </div>
 
         {/* Reverse mode: show required gross prominently */}
@@ -921,16 +932,29 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
 
   const handleCompare = () => {
     setTouched(true);
-    const fg = parseFloat(String(frenchGross).replace(/[^\d.,]/g, "").replace(",", "."));
-    if (!fg || fg <= 0) { setError(t.errorInvalid); return; }
+    const rawFr = parseFloat(String(frenchGross).replace(/[^\d.,]/g, "").replace(",", "."));
+    if (!rawFr || rawFr <= 0) { setError(t.errorInvalid); return; }
+
+    // In netto mode, frenchGross field contains the desired net — derive gross
+    let fg = rawFr;
+    if (expatDirection === "netto") {
+      // Binary search for French gross that produces rawFr net
+      let lo = rawFr * 0.8, hi = rawFr * 3;
+      for (let i = 0; i < 80; i++) {
+        const mid = (lo + hi) / 2;
+        calcSalarie(mid, "month", situation).net_monthly < rawFr ? lo = mid : hi = mid;
+        if (Math.abs(hi - lo) < 0.5) break;
+      }
+      fg = (lo + hi) / 2;
+    }
+
     const rawVal = parseFloat(String(expatGross).replace(/[^\d.,]/g, "").replace(",", "."));
     setError("");
 
     if (expatDirection === "netto" && rawVal > 0) {
-      // Binary search: find the gross that produces the desired net abroad
       const c = EXPAT_COUNTRIES[countryKey];
       const calcNetFn = (gross) => c.calcNet ? c.calcNet(gross, countryKey === "td" ? detachement : false) : gross;
-      const targetNet = rawVal - pkgMonthly; // net target excluding package
+      const targetNet = rawVal - pkgMonthly;
       let lo = Math.max(100, targetNet * 0.5), hi = targetNet * 5, mid = targetNet;
       for (let i = 0; i < 80; i++) {
         mid = (lo + hi) / 2;
@@ -947,7 +971,17 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
   const switchCountry = (key) => {
     setCountryKey(key);
     if (!result) return;
-    const fg = parseFloat(String(frenchGross).replace(/[^\d.,]/g, "").replace(",", "."));
+    const rawFr = parseFloat(String(frenchGross).replace(/[^\d.,]/g, "").replace(",", "."));
+    let fg = rawFr;
+    if (expatDirection === "netto" && rawFr > 0) {
+      let lo = rawFr * 0.8, hi = rawFr * 3;
+      for (let i = 0; i < 80; i++) {
+        const mid = (lo + hi) / 2;
+        calcSalarie(mid, "month", situation).net_monthly < rawFr ? lo = mid : hi = mid;
+        if (Math.abs(hi - lo) < 0.5) break;
+      }
+      fg = (lo + hi) / 2;
+    }
     setResult(calcResult(fg, key, result.eg, key === "td" ? detachement : false, atmpRate, mutuelle));
   };
 
@@ -1010,12 +1044,15 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
           </div>
 
           <div className="input-group">
-            <div className="input-label">{t.inputLabel}</div>
+            <div className="input-label">{expatDirection === "netto" ? t.expatFrNetLabel : t.expatFrGrossLabel}</div>
+            {expatDirection === "netto" && (
+              <p style={{ fontSize: 11, color: "rgba(240,236,232,0.3)", marginBottom: 8 }}>{t.expatFrNetHint}</p>
+            )}
             <input className="input-field" type="number" value={frenchGross}
-              onChange={e => { setFrenchGross(e.target.value); setTouched(false); }}
+              onChange={e => { setFrenchGross(e.target.value); }}
               onKeyDown={e => e.key === "Enter" && handleCompare()}
-              placeholder="5 000"
-              style={touched && (!frenchGross || parseFloat(frenchGross) <= 0) ? { borderColor: "#ff4f4f", boxShadow: "0 0 0 2px rgba(255,79,79,0.15)" } : {}}
+              placeholder={expatDirection === "netto" ? "3 000" : "5 000"}
+              
             />
           </div>
 
@@ -1194,9 +1231,18 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
 
             <div className="result-header">
               <span className="result-title">{country.flag} {country.label[lang]}</span>
-              <span style={{ fontSize: 11, color: "rgba(79,142,255,0.7)", background: "rgba(79,142,255,0.1)", border: "1px solid rgba(79,142,255,0.2)", borderRadius: 100, padding: "3px 10px" }}>
-                {t.partsInfo(situation.parts)}
-              </span>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: "rgba(79,142,255,0.7)", background: "rgba(79,142,255,0.1)", border: "1px solid rgba(79,142,255,0.2)", borderRadius: 100, padding: "3px 10px" }}>
+                  {expatDirection === "netto"
+                    ? t.expatDirNetto
+                    : result.eg
+                      ? t.expatDirBruto
+                      : (lang === "fr" ? "Brut min. calculé" : "Min. gross calculated")}
+                </span>
+                <span style={{ fontSize: 11, color: "rgba(79,142,255,0.7)", background: "rgba(79,142,255,0.1)", border: "1px solid rgba(79,142,255,0.2)", borderRadius: 100, padding: "3px 10px" }}>
+                  {t.partsInfo(situation.parts)}
+                </span>
+              </div>
             </div>
 
             {/* Equivalent gross callout — when no foreign gross entered */}
