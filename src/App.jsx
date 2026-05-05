@@ -274,6 +274,8 @@ const T = {
     disclaimer: "Estimation indicative basée sur les taux 2026. Ne tient pas compte de tous les crédits d'impôt, déductions spécifiques ou revenus du conjoint. Consultez un expert-comptable pour une simulation précise.",
     footerTagline: "Calculez votre net en quelques secondes",
     newCalc: "Nouveau calcul",
+    copyResult: "Copier le résultat",
+    copied: "Copié !",
     errorInvalid: "Veuillez saisir un montant valide.",
     errorTooHigh: "Montant trop élevé.",
     // Top-level tabs
@@ -371,6 +373,8 @@ const T = {
     disclaimer: "Indicative estimate based on 2026 rates. Does not account for all tax credits, specific deductions, or spouse income. Consult an accountant for a precise calculation.",
     footerTagline: "Calculate your net pay in seconds",
     newCalc: "New calculation",
+    copyResult: "Copy result",
+    copied: "Copied!",
     errorInvalid: "Please enter a valid amount.",
     errorTooHigh: "Amount too high.",
     // Top-level tabs
@@ -474,9 +478,25 @@ export default function App() {
   const situation = QF_SITUATIONS.find(s => s.key === situationKey);
 
   useEffect(() => {
+    // Load language
     try {
       const saved = localStorage.getItem("salairenet_lang");
       if (saved && ["fr","en"].includes(saved)) setLang(saved);
+    } catch {}
+    // Load persisted France tab inputs
+    try {
+      const s = localStorage.getItem("salairenet_france");
+      if (s) {
+        const d = JSON.parse(s);
+        if (d.mode && ["salarie","ae"].includes(d.mode)) setMode(d.mode);
+        if (d.direction && ["bruto","netto"].includes(d.direction)) setDirection(d.direction);
+        if (d.inputValue) setInputValue(d.inputValue);
+        if (d.netInput) setNetInput(d.netInput);
+        if (d.period && ["month","year"].includes(d.period)) setPeriod(d.period);
+        if (d.activity) setActivity(d.activity);
+        if (d.situationKey) setSituationKey(d.situationKey);
+        if (d.topTab && ["france","expat"].includes(d.topTab)) setTopTab(d.topTab);
+      }
     } catch {}
     // Inject Google Fonts
     if (!document.getElementById("salairenet-fonts")) {
@@ -490,6 +510,7 @@ export default function App() {
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
       (window.adsbygoogle = window.adsbygoogle || []).push({});
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch(e) {}
   }, []);
 
@@ -497,6 +518,15 @@ export default function App() {
     setLang(l);
     try { localStorage.setItem("salairenet_lang", l); } catch {}
   };
+
+  // Save France tab inputs on change
+  useEffect(() => {
+    try {
+      localStorage.setItem("salairenet_france", JSON.stringify({
+        mode, direction, inputValue, netInput, period, activity, situationKey, topTab
+      }));
+    } catch {}
+  }, [mode, direction, inputValue, netInput, period, activity, situationKey, topTab]);
 
   const calcBrutoFromNet = (netMonthlyTarget, sit) => {
     // Binary search for gross that produces the target net
@@ -595,6 +625,12 @@ export default function App() {
         .glow { position: fixed; border-radius: 50%; filter: blur(120px); pointer-events: none; z-index: 0; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
         @media(max-width:520px) { .input-row { flex-direction: column; } .net-amount { font-size: 26px; } }
+        @media(max-width:480px) {
+          .expat-table { grid-template-columns: 1fr 1fr !important; }
+          .expat-table .et-label { grid-column: 1 / -1; font-size: 11px; color: rgba(240,236,232,0.35); padding-bottom: 2px; border-bottom: none; }
+          .expat-table .et-fr { text-align: left !important; font-size: 11px; }
+          .expat-table .et-ab { font-size: 11px; }
+        }
       `}</style>
 
       <div className="glow" style={{ width: 500, height: 400, background: "rgba(79,142,255,0.05)", top: -100, left: "50%", transform: "translateX(-50%)" }} />
@@ -770,10 +806,29 @@ export default function App() {
 
 function ResultCard({ result, t, onReset, lang, situation }) {
   const [showDetail, setShowDetail] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { type, data } = result;
 
   const grossMonthly = type === "salarie" ? data.brut_monthly : data.ca_monthly;
   const grossAnnual  = type === "salarie" ? data.brut_annual  : data.ca_annual;
+
+  const handleCopy = () => {
+    const lines = [
+      `SalaireNet — ${result.isReverse ? (lang === "fr" ? "Net → Brut" : "Net → Gross") : (lang === "fr" ? "Brut → Net" : "Gross → Net")}`,
+      `${lang === "fr" ? "Situation" : "Situation"}: ${situation.label[lang]}`,
+      ``,
+      result.isReverse
+        ? `${lang === "fr" ? "Salaire brut nécessaire" : "Required gross salary"}: ${fmt(data.brut_monthly)}${t.perMonth} (${fmt(data.brut_annual)}${t.perYear})`
+        : `${lang === "fr" ? "Salaire brut" : "Gross salary"}: ${fmt(grossMonthly)}${t.perMonth}`,
+      `${lang === "fr" ? "Net en poche" : "Take-home pay"}: ${fmt(data.net_monthly)}${t.perMonth} (${fmt(data.net_annual)}${t.perYear})`,
+      `${lang === "fr" ? "Cotisations sociales" : "Social contributions"}: ${fmt(data.cotisations_monthly)}${t.perMonth}`,
+      `${lang === "fr" ? "Impôt sur le revenu" : "Income tax"}: ${fmt(data.ir_monthly)}${t.perMonth}`,
+      `${lang === "fr" ? "Taux effectif IR" : "Effective tax rate"}: ${data.taux_effectif?.toFixed(1)}%`,
+      ``,
+      `salairenet.vercel.app`,
+    ].join("\n");
+    navigator.clipboard.writeText(lines).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {});
+  };
 
   return (
     <>
@@ -856,7 +911,12 @@ function ResultCard({ result, t, onReset, lang, situation }) {
         <div className="disclaimer">{t.disclaimer}</div>
       </div>
 
-      <button className="reset-btn" onClick={onReset}>← {t.newCalc}</button>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button className="reset-btn" onClick={onReset} style={{ flex: 1 }}>← {t.newCalc}</button>
+        <button onClick={handleCopy} style={{ flex: 1, padding: "12px 16px", background: copied ? "rgba(80,200,120,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${copied ? "rgba(80,200,120,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: copied ? "#50c878" : "rgba(240,236,232,0.5)", fontFamily: "'DM Sans', sans-serif", fontSize: 13, cursor: "pointer", transition: "all 0.2s" }}>
+          {copied ? t.copied : t.copyResult}
+        </button>
+      </div>
     </>
   );
 }
@@ -879,6 +939,34 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
   const [error, setError] = useState("");
   const [touched, setTouched] = useState(false);
   const [expatDirection, setExpatDirection] = useState("bruto");
+
+  // Load persisted expat inputs on mount
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem("salairenet_expat");
+      if (s) {
+        const d = JSON.parse(s);
+        if (d.frenchGross) setFrenchGross(d.frenchGross);
+        if (d.countryKey && EXPAT_COUNTRIES[d.countryKey]) setCountryKey(d.countryKey);
+        if (d.expatGross) setExpatGross(d.expatGross);
+        if (d.costs) setCosts(d.costs);
+        if (d.pkg) setPkg(d.pkg);
+        if (typeof d.atmpRate === "number") { setAtmpRate(d.atmpRate); setAtmpEdited(d.atmpRate !== 2.0); }
+        if (typeof d.mutuelle === "number") setMutuelle(d.mutuelle);
+        if (typeof d.detachement === "boolean") setDetachement(d.detachement);
+        if (d.expatDirection && ["bruto","netto"].includes(d.expatDirection)) setExpatDirection(d.expatDirection);
+      }
+    } catch {}
+  }, []);
+
+  // Save expat inputs on change
+  useEffect(() => {
+    try {
+      localStorage.setItem("salairenet_expat", JSON.stringify({
+        frenchGross, countryKey, expatGross, costs, pkg, atmpRate, mutuelle, detachement, expatDirection
+      }));
+    } catch {}
+  }, [frenchGross, countryKey, expatGross, costs, pkg, atmpRate, mutuelle, detachement, expatDirection]);
 
   const country = EXPAT_COUNTRIES[countryKey];
   const totalCosts = Object.values(costs).reduce((a, b) => a + b, 0);
@@ -1256,7 +1344,7 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
                 </div>
                 {result.pkgMonthly > 0 && (
                   <div style={{ fontSize: 12, color: "rgba(79,142,255,0.5)", marginTop: 4 }}>
-                    {lang === "fr" ? `dont ${fmt(result.pkgMonthly)}/mois de package` : `incl. ${fmt(result.pkgMonthly)}/month package`}
+                    {lang === "fr" ? `dont ${fmt(result.pkgMonthly)}${t.perMonth} de package` : `incl. ${fmt(result.pkgMonthly)}${t.perMonth} package`}
                   </div>
                 )}
               </div>
@@ -1300,7 +1388,7 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
             })()}
 
             {/* Comparison table */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 16 }}>
+            <div className="expat-table" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 16 }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(240,236,232,0.3)", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.08)" }}></div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(240,236,232,0.3)", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.08)", textAlign: "right" }}>🇫🇷 France</div>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#4f8eff", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.08)", textAlign: "right" }}>{country.flag} {country.label[lang]}</div>
@@ -1313,11 +1401,11 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
                 { label: t.expatDispoRow, fr: result.frNet, ab: result.abroadDisposable, highlight: true },
               ].map((row, i) => (
                 <Fragment key={i}>
-                  <div style={{ fontSize: 12, color: row.highlight ? "#f0ece8" : "rgba(240,236,232,0.45)", fontWeight: row.highlight ? 500 : 300, padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{row.label}</div>
-                  <div style={{ fontSize: 12, color: row.highlight ? "#fff" : "rgba(240,236,232,0.5)", fontWeight: row.highlight ? 700 : 400, fontFamily: "'Syne', sans-serif", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", textAlign: "right" }}>
+                  <div className="et-label" style={{ fontSize: 12, color: row.highlight ? "#f0ece8" : "rgba(240,236,232,0.45)", fontWeight: row.highlight ? 500 : 300, padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{row.label}</div>
+                  <div className="et-fr" style={{ fontSize: 12, color: row.highlight ? "#fff" : "rgba(240,236,232,0.5)", fontWeight: row.highlight ? 700 : 400, fontFamily: "'Syne', sans-serif", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", textAlign: "right" }}>
                     {row.fr !== null ? fmt(row.fr) : "—"}
                   </div>
-                  <div style={{ fontSize: 12, color: row.highlight ? (result.abroadDisposable > result.frNet + 0.5 ? "#50c878" : result.abroadDisposable < result.frNet - 0.5 ? "#ff7070" : "#fff") : "rgba(240,236,232,0.5)", fontWeight: row.highlight ? 700 : 400, fontFamily: "'Syne', sans-serif", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", textAlign: "right" }}>
+                  <div className="et-ab" style={{ fontSize: 12, color: row.highlight ? (result.abroadDisposable > result.frNet + 0.5 ? "#50c878" : result.abroadDisposable < result.frNet - 0.5 ? "#ff7070" : "#fff") : "rgba(240,236,232,0.5)", fontWeight: row.highlight ? 700 : 400, fontFamily: "'Syne', sans-serif", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", textAlign: "right" }}>
                     {row.ab !== null ? fmt(row.ab) : "—"}
                   </div>
                 </Fragment>
@@ -1401,8 +1489,40 @@ function ExpatComparison({ lang, t, situation, situationKey, setSituationKey }) 
             )}
 
             <div className="disclaimer" style={{ marginTop: 16 }}>{t.expatDisclaimer}</div>
+
+            {/* AdSense slot — expat result */}
+            <div className="ad-slot" style={{ margin: "16px 0", minHeight: 90, background: "transparent" }}
+              dangerouslySetInnerHTML={{ __html: '<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="XXXXXXXXXX" data-ad-format="auto" data-full-width-responsive="true"></ins>' }}
+            />
           </div>
-          <button className="reset-btn" onClick={reset}>← {t.newCalc}</button>
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button className="reset-btn" onClick={reset} style={{ flex: 1, marginTop: 0 }}>← {t.newCalc}</button>
+            <button onClick={() => {
+              const c = EXPAT_COUNTRIES[countryKey];
+              const lines = [
+                `SalaireNet — ${lang === "fr" ? "Comparaison expatrié" : "Expat comparison"}: ${c.flag} ${c.label[lang]}`,
+                `${lang === "fr" ? "Direction" : "Direction"}: ${expatDirection === "netto" ? t.expatDirNetto : t.expatDirBruto}`,
+                ``,
+                `🇫🇷 France`,
+                `  ${lang === "fr" ? "Salaire brut" : "Gross salary"}: ${fmt(result.frData.brut_monthly)}${t.perMonth}`,
+                `  ${lang === "fr" ? "Net en poche" : "Take-home"}: ${fmt(result.frNet)}${t.perMonth}`,
+                ``,
+                `${c.flag} ${c.label[lang]}`,
+                `  ${lang === "fr" ? "Salaire brut" : "Gross salary"}: ${fmt(result.abroadGross)}${t.perMonth}`,
+                `  ${lang === "fr" ? "Net en poche" : "Take-home"}: ${fmt(result.abroadNet - (result.pkgMonthly || 0))}${t.perMonth}`,
+                ...(result.pkgMonthly > 0 ? [`  ${lang === "fr" ? "Package" : "Package"}: +${fmt(result.pkgMonthly)}${t.perMonth}`] : []),
+                `  ${lang === "fr" ? "Net disponible" : "Disposable income"}: ${fmt(result.abroadDisposable)}${t.perMonth}`,
+                ``,
+                `salairenet.vercel.app`,
+              ].join("\n");
+              navigator.clipboard.writeText(lines).then(() => {
+                const btn = document.getElementById("expat-copy-btn");
+                if (btn) { btn.textContent = t.copied; btn.style.color = "#50c878"; setTimeout(() => { btn.textContent = t.copyResult; btn.style.color = ""; }, 2000); }
+              }).catch(() => {});
+            }} id="expat-copy-btn" style={{ flex: 1, padding: "12px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "rgba(240,236,232,0.5)", fontFamily: "'DM Sans', sans-serif", fontSize: 13, cursor: "pointer", transition: "all 0.2s" }}>
+              {t.copyResult}
+            </button>
+          </div>
         </>
       )}
     </>
