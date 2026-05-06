@@ -911,8 +911,8 @@ function ResultCard({ result, t, onReset, lang, situation }) {
         <div className="disclaimer">{t.disclaimer}</div>
       </div>
 
-      <div style={{ display: "flex", gap: 10 }}>
-        <button className="reset-btn" onClick={onReset} style={{ flex: 1 }}>← {t.newCalc}</button>
+      <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        <button className="reset-btn" onClick={onReset} style={{ flex: 1, marginTop: 0 }}>← {t.newCalc}</button>
         <button onClick={handleCopy} style={{ flex: 1, padding: "12px 16px", background: copied ? "rgba(80,200,120,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${copied ? "rgba(80,200,120,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: copied ? "#50c878" : "rgba(240,236,232,0.5)", fontFamily: "'DM Sans', sans-serif", fontSize: 13, cursor: "pointer", transition: "all 0.2s" }}>
           {copied ? t.copied : t.copyResult}
         </button>
